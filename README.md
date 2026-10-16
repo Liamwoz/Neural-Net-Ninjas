@@ -1,5 +1,11 @@
 # Neural-Net-Ninjas
 
+## Members
+Lex Renders
+Liam Wozniak
+Rune Lemmens
+Pamela Barbosa
+
 ## Project goal
 Build a computer-vision pipeline that takes ~20 seconds of soccer game video and produces a 2D field map of player/ball positions.
 
