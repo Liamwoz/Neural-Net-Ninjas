@@ -120,6 +120,10 @@ StyleCopReport.xml
 *_wpftmp.csproj
 *.log
 *.tlog
+
+# YOLO experiment outputs and downloaded model weights
+runs/
+*.pt
 *.vspscc
 *.vssscc
 .builds

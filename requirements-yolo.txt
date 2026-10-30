@@ -1,0 +1,6 @@
+# YOLO inference and training
+ultralytics>=8.3,<9
+
+# Video frame reading/writing and image utilities
+opencv-python>=4.10,<5
+tqdm>=4.66,<5
