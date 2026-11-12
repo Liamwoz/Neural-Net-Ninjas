@@ -19,6 +19,8 @@ This week focuses on three setup milestones:
 - `docs/video-selection.md` – checklist for choosing the initial clip
 - `docs/labeling-standards.md` – annotation rules and class definitions
 - `docs/yolo-experiment-log.md` – repeatable template for YOLO experiments
+- `notebooks/Cv_Labeling.ipynb` – assisted labeling and dataset preparation
+- `notebooks/Model_training_and_evaluation.ipynb` – YOLO26 training and evaluation
 - `requirements-yolo.txt` – dependencies for the YOLO video baseline
 
 ## YOLO setup
