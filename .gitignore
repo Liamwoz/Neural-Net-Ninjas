@@ -125,6 +125,7 @@ StyleCopReport.xml
 # YOLO experiment outputs and downloaded model weights
 runs/
 *.pt
+!model/weights.pt
 *.vspscc
 *.vssscc
 .builds
