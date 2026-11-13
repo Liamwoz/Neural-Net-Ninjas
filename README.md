@@ -49,3 +49,7 @@ Use [the standard YOLO26 notebook](notebooks/yolo26_video_experiment.ipynb) for 
 ## Frontend
 
 See [frontend/README.md](frontend/README.md) for the local dashboard and projected-data format.
+
+## Local model training
+
+Use [the local YOLO26 training notebook](notebooks/local_yolo26_training.ipynb) for dataset layout, sequential splitting, tiled preprocessing, training, and evaluation.
