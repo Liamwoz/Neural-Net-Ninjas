@@ -1,12 +1,13 @@
 # Touchline frontend
 
-A dependency-free local dashboard for reviewing footage alongside projected player and ball positions. The sample positions are illustrative and do not run inference. To start it from the repository root:
+A local dashboard for reviewing footage alongside projected player and ball positions. The sample positions are illustrative and do not run inference. To start it from the repository root:
 
 ```powershell
-python -m http.server 8000 --directory frontend
+python -m pip install -r requirements-yolo.txt
+python frontend/server.py
 ```
 
-Open http://localhost:8000. Choose a browser-supported video and load a JSON file containing the homography output. The video controls drive both views. Without a video, the same controls play the loaded timeline. The browser reads files locally; nothing is uploaded to a server. The frontend does not run YOLO or calculate homography.
+Open http://localhost:8000. Choose a browser-supported video and select **Analyze video** to run `model/weights_better_model.pt` locally. Analysis processes every frame. The progress bar shows processed frames and estimates the remaining time from the observed speed; the estimate can change as processing continues. Restart the local server after updating the app. Once finished, detections appear as boxes during playback. You can also load a JSON file containing homography output. The video controls drive both views. Without a video, the same controls play the loaded timeline. Video analysis sends the selected file to the local server on your computer; no remote service is used. The server runs YOLO; it does not calculate homography. The pitch remains empty for YOLO-only results because image coordinates are not projected pitch coordinates. The model is loaded on first analysis and reused. Videos up to 512 MB are supported and temporary uploads are removed after analysis.
 
 ## Data contract
 
