@@ -45,3 +45,7 @@ Use [the standard YOLO26 notebook](notebooks/yolo26_video_experiment.ipynb) for 
 - One video is selected and documented with source, timestamp, and rationale
 - Label schema and annotation rules are agreed and documented
 - At least one YOLO baseline run is documented with settings and observations
+
+## Frontend
+
+See [frontend/README.md](frontend/README.md) for the local dashboard and projected-data format.

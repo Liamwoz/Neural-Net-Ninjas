@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Touchline — Match analysis</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <a class="brand" href="#"><span class="brand-mark">✳</span><span>touchline<small>VISION WORKSPACE</small></span></a>
+    <div class="side-label">WORKSPACE</div>
+    <div class="nav-active"><span>◫</span> Match analysis <b>01</b></div>
+    <div class="sidebar-bottom"><div class="side-card"><span class="side-icon">↗</span><strong>From pixels to pitch.</strong><p>A clearer view of the game, one frame at a time.</p></div><div class="side-footer"><span class="status-dot"></span> LOCAL WORKSPACE <span>● ● ●</span></div></div>
+  </aside>
+  <main>
+    <header class="topbar"><div><span class="crumb">WORKSPACE</span><span class="slash">/</span><span>Match analysis</span></div><div class="top-right"><span class="live-dot"></span> LOCAL SESSION <span class="avatar">NN</span></div></header>
+    <section class="content">
+      <div class="heading"><div><div class="eyebrow"><span></span> MATCH INTELLIGENCE</div><h1>See the whole game<span>.</span></h1><p>Bring your footage and projected positions together in one view.</p></div><button id="sampleBtn" class="button secondary">↺ &nbsp; Load sample</button></div>
+      <div class="toolbar"><div class="session"><span class="session-icon">▣</span><div><strong id="sessionName">Sample session</strong><small id="sessionDetail">Illustrative data · no match video loaded</small></div></div><div class="toolbar-actions"><label class="button secondary">↑ &nbsp; Add video<input id="videoInput" type="file" accept="video/*" hidden></label><label class="button primary">＋ &nbsp; Load tracking data<input id="dataInput" type="file" accept=".json,application/json" hidden></label></div></div>
+      <div id="notice" class="notice"><span>✳</span> You’re exploring sample data. Load a video and projected JSON to view your own match.</div>
+      <div class="dashboard">
+        <section class="panel video-panel"><div class="panel-heading"><div><div class="panel-kicker">01 / FOOTAGE</div><h2>Match video <span class="badge" id="videoBadge">NO VIDEO</span></h2></div><span class="panel-symbol">↗</span></div><div class="video-wrap" id="videoWrap"><video id="video" playsinline></video><canvas id="overlay"></canvas><div class="video-empty" id="videoEmpty"><div class="play-icon">▶</div><strong>Your match, in motion.</strong><p>Add a video to see the action alongside your tactical map.</p><label class="button light">↑ &nbsp; Choose a video<input id="videoInputEmpty" type="file" accept="video/*" hidden></label></div><div class="video-tag" id="videoTag">● &nbsp; MATCH FOOTAGE</div></div><div class="playback"><button id="playBtn" class="play-button" aria-label="Play">▶</button><span id="currentTime">00:00</span><input type="range" id="seek" min="0" max="20" step="0.01" value="0" aria-label="Seek through session"><span id="duration">00:20</span><button id="muteBtn" class="icon-button" aria-label="Mute video">◖))</button></div></section>
+        <section class="panel pitch-panel"><div class="panel-heading"><div><div class="panel-kicker">02 / PROJECTION</div><h2>Tactical map <span class="badge green">LIVE VIEW</span></h2></div><span class="panel-symbol">↗</span></div><div class="pitch-intro"><div><strong>Top-down view</strong><p>Player &amp; ball positions on the pitch</p></div><span class="coordinate">105 × 68 m</span></div><div class="pitch-container"><svg id="pitch" viewBox="0 0 680 440" role="img" aria-label="Top-down football pitch"><rect width="680" height="440" rx="4" fill="#397f60"/><path d="M0 0h85v440H0zm170 0h85v440h-85zm170 0h85v440h-85zm170 0h85v440h-85z" fill="#fff" opacity=".035"/><g fill="none" stroke="#d5e9d5" stroke-width="2" opacity=".78"><rect x="25" y="25" width="630" height="390"/><path d="M340 25v390M25 125h100v190H25M655 125H555v190h100M25 175h40v90H25M655 175h-40v90h40"/><circle cx="340" cy="220" r="57"/><path d="M125 173a57 57 0 0 1 0 94M555 173a57 57 0 0 0 0 94"/><path d="M25 196h-9v48h9M655 196h9v48h-9"/></g><g fill="#d5e9d5" opacity=".8"><circle cx="340" cy="220" r="3"/><circle cx="94" cy="220" r="2.5"/><circle cx="586" cy="220" r="2.5"/></g><g id="markers"></g></svg></div><div class="legend"><span><i class="legend-dot home"></i> Team A</span><span><i class="legend-dot away"></i> Team B</span><span><i class="legend-dot ball"></i> Ball</span><span><i class="legend-dot other"></i> Other</span></div></section>
+      </div>
+      <div class="bottom-grid"><div class="insight"><span class="insight-icon">◉</span><div><small>VISIBLE PLAYERS</small><strong id="playerCount">0</strong><p>in the current frame</p></div></div><div class="insight"><span class="insight-icon amber">✳</span><div><small>BALL STATUS</small><strong id="ballStatus">Not visible</strong><p>in the current frame</p></div></div><div class="insight wide"><span class="insight-icon blue">⌁</span><div><small>DATA SOURCE</small><strong id="dataStatus">Sample projection</strong><p id="frameStatus">Illustrative positions</p></div></div></div>
+      <footer><span>TOUCHLINE <b>✳</b> BUILT FOR THE BEAUTIFUL GAME</span><span>LOCAL ANALYSIS WORKSPACE &nbsp; / &nbsp; 01</span></footer>
+    </section>
+  </main>
+</div><script src="app.js"></script>
+</body></html>
