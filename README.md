@@ -45,3 +45,29 @@ Use [the standard YOLO26 notebook](notebooks/yolo26_video_experiment.ipynb) for 
 - One video is selected and documented with source, timestamp, and rationale
 - Label schema and annotation rules are agreed and documented
 - At least one YOLO baseline run is documented with settings and observations
+
+## Tracking and Tactical Analytics
+
+Extra Mile work. Full documentation and error analysis are in [docs/tracking_team_classification.md](docs/tracking_team_classification.md).
+
+- **BoT-SORT** (Ultralytics, `scripts/custom_botsort.yaml`) provides the per-frame player boxes.
+- **Custom stable IDs**: appearance-aware **Hungarian matching** on predicted position plus an HSV appearance histogram. The BoT-SORT IDs are not used as identities.
+- **Jersey team classification**: HSV grass filtering, per-crop K-Means jersey colors and a two-team K-Means model learned from the video.
+- **Referee recognition** (dark-shirt rule) and **goalkeeper recognition/re-identification** (raw-HSV role state machine), both separate from RED/GREEN clustering.
+- **Separate ball detection** (own YOLO pass, not part of the player ID system).
+
+Run it from the `scripts` folder, because the script uses paths relative to `scripts/`:
+
+```powershell
+cd scripts
+python run_tracking_with_jersey.py
+```
+
+```text
+Red box   = red team
+Green box = green team
+Black box = referee
+Gray box  = temporarily unknown
+Blue box  = ball
+Text      = stable numeric player ID
+```
