@@ -434,5 +434,14 @@ FodyWeavers.xsd
 
 #videos
 
-*.mp4
+# pycharm
 .idea/
+
+# test / evaluation outputs (never commit)
+.pytest_cache/
+*.py[cod]
+tests/goalkeeper_eval/cache/
+tests/**/*.mp4
+tests/**/*.pkl
+tests/**/records*.json
+gk_eval/

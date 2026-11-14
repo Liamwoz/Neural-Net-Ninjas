@@ -9,19 +9,24 @@ from scipy.optimize import linear_sum_assignment
 
 import math
 
-from jersey_classifier import JerseyClassifier, TEAM_UNKNOWN
+from jersey_classifier import JerseyClassifier, TEAM_UNKNOWN, TEAM_REFEREE
 
 
 # =========================================================
 # CONFIG
 # =========================================================
 
-MODEL_PATH = "../model/weights.pt"
+MODEL_PATH = "../model/The_Goat.pt"
 VIDEO_PATH = "../data/121364_0.mp4"
 
-PLAYER_CLASS = 1
+PLAYER_CLASS = 0
+BALL_CLASS = 1
 
 TRACKER_CONFIG = "custom_botsort.yaml"
+
+# Print goalkeeper-role decisions (candidate, confirmed,
+# rejected, lost, re-identified). State changes only.
+GK_DEBUG = True
 
 
 # =========================================================
@@ -36,6 +41,7 @@ MAX_LOST_FRAMES = 30
 # Maximum initial spatial search radius
 BASE_MATCH_DISTANCE = 90
 
+# Velocity smoothing
 VELOCITY_SMOOTHING = 0.7
 
 
@@ -76,9 +82,6 @@ model = YOLO(MODEL_PATH)
 
 print(model.names)
 
-# Expected:
-# {0: 'ball', 1: 'player', 2: 'soccer ball'}
-
 
 # =========================================================
 # JERSEY CLASSIFIER
@@ -87,8 +90,12 @@ print(model.names)
 jersey_classifier = JerseyClassifier(
     min_samples=6,
     max_samples=20,
-    min_players_for_clustering=6
+    min_players_for_clustering=6,
+    gk_debug=GK_DEBUG
 )
+
+# Expected:
+# {0: 'player', 1: 'soccer ball'}
 
 
 # =========================================================
@@ -343,6 +350,132 @@ def detection_is_overlapping(
 
 
     return False
+
+
+# =========================================================
+# JERSEY REGION OCCLUSION
+#
+# Each YOLO box is still processed independently, like in
+# the GitHub K-Means example.
+#
+# We only skip jersey learning when another player's box
+# actually covers a large part of THIS player's upper-body
+# jersey region. Mere closeness does not block classification.
+# =========================================================
+
+def jersey_region_is_occluded(
+    index,
+    boxes,
+    max_coverage=0.35
+):
+
+    x1, y1, x2, y2 = boxes[
+        index
+    ]
+
+    width = max(
+        1.0,
+        x2 - x1
+    )
+
+    height = max(
+        1.0,
+        y2 - y1
+    )
+
+    # Match the GitHub-style upper-shirt crop:
+    # top ~40% of player box, with a small horizontal inset.
+    jx1 = (
+        x1
+        +
+        width * 0.10
+    )
+
+    jx2 = (
+        x2
+        -
+        width * 0.10
+    )
+
+    jy1 = y1
+
+    jy2 = (
+        y1
+        +
+        height * 0.40
+    )
+
+    jersey_area = max(
+        1.0,
+        (
+            jx2 - jx1
+        )
+        *
+        (
+            jy2 - jy1
+        )
+    )
+
+
+    for other_index, other_box in enumerate(
+        boxes
+    ):
+
+        if other_index == index:
+            continue
+
+        ox1, oy1, ox2, oy2 = other_box
+
+        inter_x1 = max(
+            jx1,
+            ox1
+        )
+
+        inter_y1 = max(
+            jy1,
+            oy1
+        )
+
+        inter_x2 = min(
+            jx2,
+            ox2
+        )
+
+        inter_y2 = min(
+            jy2,
+            oy2
+        )
+
+        inter_w = max(
+            0.0,
+            inter_x2 - inter_x1
+        )
+
+        inter_h = max(
+            0.0,
+            inter_y2 - inter_y1
+        )
+
+        covered_area = (
+            inter_w
+            *
+            inter_h
+        )
+
+        coverage = (
+            covered_area
+            /
+            jersey_area
+        )
+
+        # Only reject when the actual shirt region is
+        # heavily covered by another detection.
+        if coverage >= max_coverage:
+            return True
+
+
+    return False
+
 
 
 # =========================================================
@@ -1277,20 +1410,23 @@ def draw_player(
         box
     )
 
-
     team = jersey_classifier.get_team(
         display_id
     )
 
     if team == TEAM_UNKNOWN:
-        color = get_track_color(
-            display_id
+        # Neutral color while jersey/team is still unknown.
+        # Avoids the rainbow of temporary tracking colors
+        # during the first seconds of the video.
+        color = (
+            200,
+            200,
+            200
         )
     else:
         color = jersey_classifier.get_draw_color(
             display_id
         )
-
 
     # =====================================================
     # BOX
@@ -1304,32 +1440,15 @@ def draw_player(
         1
     )
 
-
     # =====================================================
-    # ID LABEL
+    # ID / TEAM LABEL
     # =====================================================
 
-    team_name = jersey_classifier.get_team_name(
-        display_id
-    )
+    label = str(display_id)
 
-    if team_name:
-        label = f"{display_id} {team_name}"
-    else:
-        label = str(
-            display_id
-        )
-
-
-    font = (
-        cv2.FONT_HERSHEY_SIMPLEX
-    )
-
-
+    font = cv2.FONT_HERSHEY_SIMPLEX
     font_scale = 0.45
-
     thickness = 1
-
 
     (
         text_width,
@@ -1341,140 +1460,135 @@ def draw_player(
         thickness
     )
 
+    label_top = max(
+        0,
+        y1 - text_height - 8
+    )
+
+    cv2.rectangle(
+        frame,
+        (
+            x1,
+            label_top
+        ),
+        (
+            x1 + text_width + 8,
+            y1
+        ),
+        color,
+        -1
+    )
+
+    if team == TEAM_REFEREE:
+        text_color = (
+            255,
+            255,
+            255
+        )
+    else:
+        text_color = (
+            0,
+            0,
+            0
+        )
+
+    cv2.putText(
+        frame,
+        label,
+        (
+            x1 + 4,
+            y1 - 4
+        ),
+        font,
+        font_scale,
+        text_color,
+        thickness,
+        cv2.LINE_AA
+    )
+
+
+# =========================================================
+# DRAW BALL
+# =========================================================
+
+def draw_ball(
+    frame,
+    box
+):
+
+    x1, y1, x2, y2 = map(
+        int,
+        box
+    )
+
+    # Blue box so it stays visually separate from
+    # RED / GREEN / REFEREE player labels.
+    color = (
+        255,
+        0,
+        0
+    )
+
+    cv2.rectangle(
+        frame,
+        (x1, y1),
+        (x2, y2),
+        color,
+        2
+    )
+
+    label = "BALL"
+
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = 0.45
+    thickness = 1
+
+    (
+        text_width,
+        text_height
+    ), _ = cv2.getTextSize(
+        label,
+        font,
+        font_scale,
+        thickness
+    )
 
     label_top = max(
         0,
         y1 - text_height - 8
     )
 
-
     cv2.rectangle(
         frame,
-
         (
             x1,
             label_top
         ),
-
         (
-            x1
-            +
-            text_width
-            +
-            8,
-
+            x1 + text_width + 8,
             y1
         ),
-
         color,
-
         -1
     )
 
-
     cv2.putText(
         frame,
-
         label,
-
         (
             x1 + 4,
             y1 - 4
         ),
-
         font,
-
         font_scale,
-
         (
-            0,
-            0,
-            0
+            255,
+            255,
+            255
         ),
-
         thickness,
-
         cv2.LINE_AA
     )
-
-
-    # =====================================================
-    # BOTTOM CENTER / GROUND POINT
-    # =====================================================
-
-    ground_x = int(
-        (
-            x1 + x2
-        )
-        / 2
-    )
-
-
-    ground_y = (
-        y2
-    )
-
-
-    cv2.circle(
-        frame,
-
-        (
-            ground_x,
-            ground_y
-        ),
-
-        3,
-
-        color,
-
-        -1
-    )
-
-
-    # =====================================================
-    # TRAJECTORY
-    # =====================================================
-
-    points = smooth_history(
-        history[
-            -MAX_HISTORY:
-        ],
-        window=3
-    )
-
-
-    if len(points) > 1:
-
-        pts = np.array(
-            points,
-            dtype=np.int32
-        )
-
-
-        for i in range(
-            1,
-            len(pts)
-        ):
-
-            cv2.line(
-                frame,
-
-                tuple(
-                    pts[
-                        i - 1
-                    ]
-                ),
-
-                tuple(
-                    pts[i]
-                ),
-
-                color,
-
-                2,
-
-                cv2.LINE_AA
-            )
 
 
 # =========================================================
@@ -1512,6 +1626,7 @@ while cap.isOpened():
         persist=True,
         tracker=TRACKER_CONFIG,
         classes=[PLAYER_CLASS],
+        conf=0.60,
         verbose=False
     )
 
@@ -1520,8 +1635,62 @@ while cap.isOpened():
 
 
     # =====================================================
+    # BALL DETECTION
+    #
+    # Keep ball detection separate from the player tracker.
+    # This prevents the soccer ball from entering the stable
+    # Hungarian player-ID system.
+    #
+    # Use a lower confidence threshold because the ball is
+    # much smaller than a player in this video.
+    # =====================================================
+
+    ball_result = model.predict(
+        frame,
+        classes=[BALL_CLASS],
+        conf=0.25,
+        verbose=False
+    )[0]
+
+    ball_box = None
+
+    if (
+        ball_result.boxes is not None
+        and
+        len(ball_result.boxes) > 0
+    ):
+
+        ball_boxes = (
+            ball_result.boxes.xyxy
+            .cpu()
+            .tolist()
+        )
+
+        ball_confidences = (
+            ball_result.boxes.conf
+            .cpu()
+            .tolist()
+        )
+
+        # Draw only the highest-confidence ball detection
+        # so multiple weak detections do not clutter the frame.
+        best_ball_index = int(
+            np.argmax(
+                ball_confidences
+            )
+        )
+
+        ball_box = ball_boxes[
+            best_ball_index
+        ]
+
+
+    # =====================================================
     # CURRENT DETECTIONS
     # =====================================================
+
+    # Stable IDs visible in this frame (for goalkeeper role)
+    visible_ids = []
 
     if (
         result.boxes is not None
@@ -1631,6 +1800,22 @@ while cap.isOpened():
             )
 
 
+            # -------------------------------------------------
+            # Jersey-specific occlusion check
+            #
+            # Different from the general overlap flag:
+            # nearby players are still allowed, as long as
+            # this player's upper jersey region is visible.
+            # -------------------------------------------------
+
+            jersey_occluded = (
+                jersey_region_is_occluded(
+                    index,
+                    boxes
+                )
+            )
+
+
             detections.append(
                 {
                     "box":
@@ -1649,7 +1834,10 @@ while cap.isOpened():
                         overlapping,
 
                     "good_view":
-                        good_view
+                        good_view,
+
+                    "jersey_occluded":
+                        jersey_occluded
                 }
             )
 
@@ -1663,6 +1851,10 @@ while cap.isOpened():
                 detections,
                 frame_number
             )
+        )
+
+        visible_ids = list(
+            assignments.values()
         )
 
 
@@ -1714,16 +1906,40 @@ while cap.isOpened():
 
             # =================================================
             # JERSEY / TEAM CLASSIFICATION
-            #
-            # Downstream only: it receives our already-resolved
-            # stable display_id and cannot alter tracking identity.
             # =================================================
 
-            jersey_classifier.update_player(
-                display_id,
-                frame,
-                det["box"]
-            )
+            # =================================================
+            # REFEREE DETECTION
+            #
+            # Run on EVERY good player view, even when jersey
+            # learning is skipped because of occlusion.
+            # =================================================
+
+            if det["good_view"]:
+                jersey_classifier.observe_referee(
+                    display_id,
+                    frame,
+                    det["box"]
+                )
+
+
+            # =================================================
+            # JERSEY / TEAM CLASSIFICATION
+            #
+            # RED/GREEN K-Means still uses the independent
+            # player box and skips only heavy shirt occlusion.
+            # =================================================
+
+            if (
+                det["good_view"]
+                and
+                not det["jersey_occluded"]
+            ):
+                jersey_classifier.update_player(
+                    display_id,
+                    frame,
+                    det["box"]
+                )
 
 
             # =================================================
@@ -1772,7 +1988,32 @@ while cap.isOpened():
 
 
     # =====================================================
-    # FIT JERSEY TEAM MODEL WHEN ENOUGH STABLE PLAYERS EXIST
+    # GOALKEEPER ROLE MEMORY
+    #
+    # Once per frame, after all players were observed.
+    # Also runs on frames without detections so that the
+    # goalkeeper's absence is measured correctly.
+    # =====================================================
+
+    jersey_classifier.end_frame(
+        frame_number,
+        visible_ids
+    )
+
+
+    # =====================================================
+    # DRAW BALL
+    # =====================================================
+
+    if ball_box is not None:
+        draw_ball(
+            frame,
+            ball_box
+        )
+
+
+    # =====================================================
+    # FIT JERSEY TEAM MODEL
     # =====================================================
 
     if frame_number % 10 == 0:
