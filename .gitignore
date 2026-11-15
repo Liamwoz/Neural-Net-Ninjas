@@ -11,6 +11,7 @@
 *.sln.docstates
 *.env
 video
+upload_CV_Neural_Net_Ninjas
 
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs
@@ -437,6 +438,14 @@ FodyWeavers.xsd
 
 #videos
 
+*.mp4
+
+# Track all files and subdirectories in the model folder.
+!/model/**
+
+# Local datasets and videos.
+/data/
+/.venv-directml/
 # pycharm
 .idea/
 

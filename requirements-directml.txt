@@ -1,0 +1,8 @@
+# Python 3.12 on Windows. Keep these versions aligned with scripts/yolo_directml.py.
+torch-directml==0.2.5.dev240914
+ultralytics==8.4.212
+numpy<2
+opencv-python>=4.10,<5
+PyYAML>=6,<7
+pandas>=2,<3
+ipykernel
