@@ -2,6 +2,7 @@ from ultralytics import YOLO
 
 import cv2
 import numpy as np
+import csv
 
 from collections import defaultdict
 
@@ -1592,6 +1593,38 @@ def draw_ball(
 
 
 # =========================================================
+# CSV OUTPUT
+# =========================================================
+
+tracking_csv = open(
+    "tracking_output.csv",
+    "w",
+    newline="",
+    encoding="utf-8"
+)
+
+tracking_csv_writer = csv.writer(
+    tracking_csv
+)
+
+tracking_csv_writer.writerow(
+    [
+        "frame",
+        "class_id",
+        "object_type",
+        "id",
+        "team",
+        "ground_x",
+        "ground_y",
+        "x1",
+        "y1",
+        "x2",
+        "y2"
+    ]
+)
+
+
+# =========================================================
 # VIDEO
 # =========================================================
 
@@ -1943,6 +1976,35 @@ while cap.isOpened():
 
 
             # =================================================
+            # CSV OUTPUT
+            # =================================================
+
+            ground_x, ground_y = (
+                det["ground_position"]
+            )
+
+            x1, y1, x2, y2 = (
+                det["box"]
+            )
+
+            tracking_csv_writer.writerow(
+                [
+                    frame_number,
+                    PLAYER_CLASS,
+                    "player",
+                    display_id,
+                    jersey_classifier.get_team(display_id),
+                    ground_x,
+                    ground_y,
+                    x1,
+                    y1,
+                    x2,
+                    y2
+                ]
+            )
+
+
+            # =================================================
             # TRAJECTORY
             # =================================================
 
@@ -2006,6 +2068,33 @@ while cap.isOpened():
     # =====================================================
 
     if ball_box is not None:
+
+        x1, y1, x2, y2 = ball_box
+
+        ball_x = float(
+            (x1 + x2) / 2
+        )
+
+        ball_y = float(
+            (y1 + y2) / 2
+        )
+
+        tracking_csv_writer.writerow(
+            [
+                frame_number,
+                BALL_CLASS,
+                "ball",
+                "",
+                "",
+                ball_x,
+                ball_y,
+                x1,
+                y1,
+                x2,
+                y2
+            ]
+        )
+
         draw_ball(
             frame,
             ball_box
@@ -2042,5 +2131,7 @@ while cap.isOpened():
 
 
 cap.release()
+
+tracking_csv.close()
 
 cv2.destroyAllWindows()
