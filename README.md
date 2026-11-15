@@ -19,6 +19,7 @@ This week focuses on three setup milestones:
 - `docs/video-selection.md` – checklist for choosing the initial clip
 - `docs/labeling-standards.md` – annotation rules and class definitions
 - `docs/yolo-experiment-log.md` – repeatable template for YOLO experiments
+- `docs/pitch-homography.md` – pitch keypoint model, homography pipeline and how it was improved
 - `notebooks/Cv_Labeling.ipynb` – assisted labeling and dataset preparation
 - `notebooks/Model_training_and_evaluation.ipynb` – YOLO26 training and evaluation
 - `requirements-yolo.txt` – dependencies for the YOLO video baseline
@@ -41,6 +42,24 @@ The command writes an annotated MP4 and a per-detection CSV under `runs/yolo-vid
 
 Use [the standard YOLO26 notebook](notebooks/yolo26_video_experiment.ipynb) for pretrained COCO detection, or [the Roboflow model notebook](notebooks/roboflow_yolo26_video.ipynb) to run `model/weights.pt` locally. Put the soccer video in `data/`, select the environment where the requirements are installed, and run the cells in order. Both notebooks show annotated frames and save an annotated video and detections CSV under `runs/`.
 
+## Pitch keypoints and homography
+
+A YOLO pose model is trained on the Roboflow keypoint annotations in `data/coco homography data/` (7 pitch landmarks around the left penalty box and centre circle, 31 frames of `video/121364_0.mp4`). Each landmark is its own class with one keypoint. The landmark positions in metres are defined in `scripts/pitch_keypoints.py`.
+
+```powershell
+# 1. Build the YOLO pose dataset (Roboflow images + converted labels) in runs/pitch-pose/dataset
+python scripts\prepare_pitch_pose_dataset.py
+# 2. Fine-tune yolo11n-pose; best weights are copied to model/pitch_keypoints.pt
+python scripts\train_pitch_pose.py
+# 3. Predict keypoints per frame, fit image->pitch homographies and project the
+#    tracked players/referee/ball from scripts/tracking_output.csv onto scripts/images.png
+python scripts\pitch_homography_video.py video\121364_0.mp4
+```
+
+Step 3 writes `121364_0_homography.mp4` (pitch-line overlay, keypoints, team-coloured player boxes with track IDs, a highlighted ball and a 2D minimap in team colours), `121364_0_pitch_positions.csv` (tracked objects in pitch metres and map pixels) and `121364_0_homographies.csv` (per-frame 3x3 matrices) to `runs/yolo-video/`. When too few non-collinear keypoints are visible, camera motion from optical flow carries the homography forward.
+
+To suppress single-frame keypoint "twitches", the video is processed offline: each keypoint is replaced by the median of its detections over neighbouring frames, after correcting for camera motion (`--keypoint-smooth-radius`, default 3 frames per side). The homographies then get a centred, motion-compensated average (`--homography-smooth-radius`, default 2). Neither adds lag. In the video, hollow yellow circles are the raw model detections and filled red dots are the smoothed keypoints. See [docs/pitch-homography.md](docs/pitch-homography.md) for the full write-up.
+
 ## Week 1 done criteria
 - One video is selected and documented with source, timestamp, and rationale
 - Label schema and annotation rules are agreed and documented
@@ -62,3 +81,28 @@ py -3.12 -m venv .venv-directml
 ```
 
 The notebook prints the selected Python and DirectML GPU. Its experimental bridge runs the model on the GPU, while loss calculation and validation run on CPU to work around unsupported DirectML operations. GPU memory reporting is unavailable, and the mixed workflow can be slow. `torch.cuda.is_available()` remains false with DirectML. The bridge is tied to the versions in `requirements-directml.txt`; use the normal YOLO requirements for the other notebooks.
+## Tracking and Tactical Analytics
+
+Extra Mile work. Full documentation and error analysis are in [docs/tracking_team_classification.md](docs/tracking_team_classification.md).
+
+- **BoT-SORT** (Ultralytics, `scripts/custom_botsort.yaml`) provides the per-frame player boxes.
+- **Custom stable IDs**: appearance-aware **Hungarian matching** on predicted position plus an HSV appearance histogram. The BoT-SORT IDs are not used as identities.
+- **Jersey team classification**: HSV grass filtering, per-crop K-Means jersey colors and a two-team K-Means model learned from the video.
+- **Referee recognition** (dark-shirt rule) and **goalkeeper recognition/re-identification** (raw-HSV role state machine), both separate from RED/GREEN clustering.
+- **Separate ball detection** (own YOLO pass, not part of the player ID system).
+
+Run it from the `scripts` folder, because the script uses paths relative to `scripts/`:
+
+```powershell
+cd scripts
+python run_tracking_with_jersey.py
+```
+
+```text
+Red box   = red team
+Green box = green team
+Black box = referee
+Gray box  = temporarily unknown
+Blue box  = ball
+Text      = stable numeric player ID
+```

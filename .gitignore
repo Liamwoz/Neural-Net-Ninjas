@@ -125,6 +125,7 @@ StyleCopReport.xml
 # YOLO experiment outputs and downloaded model weights
 runs/
 *.pt
+!model/weights.pt
 *.vspscc
 *.vssscc
 .builds
@@ -442,3 +443,14 @@ FodyWeavers.xsd
 # Local datasets and videos.
 /data/
 /.venv-directml/
+# pycharm
+.idea/
+
+# test / evaluation outputs (never commit)
+.pytest_cache/
+*.py[cod]
+tests/goalkeeper_eval/cache/
+tests/**/*.mp4
+tests/**/*.pkl
+tests/**/records*.json
+gk_eval/
