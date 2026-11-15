@@ -11,6 +11,7 @@
 *.sln.docstates
 *.env
 video
+upload_CV_Neural_Net_Ninjas
 
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs
