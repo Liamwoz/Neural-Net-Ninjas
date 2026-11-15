@@ -52,11 +52,11 @@ python scripts\prepare_pitch_pose_dataset.py
 # 2. Fine-tune yolo11n-pose; best weights are copied to model/pitch_keypoints.pt
 python scripts\train_pitch_pose.py
 # 3. Predict keypoints per frame, fit image->pitch homographies and project the
-#    detections from runs/yolo-video/121364_0_detections.csv onto scripts/images.png
+#    tracked players/referee/ball from scripts/tracking_output.csv onto scripts/images.png
 python scripts\pitch_homography_video.py video\121364_0.mp4
 ```
 
-Step 3 writes `121364_0_homography.mp4` (pitch-line overlay, keypoints and a 2D minimap), `121364_0_pitch_positions.csv` (detections in pitch metres and map pixels) and `121364_0_homographies.csv` (per-frame 3x3 matrices) to `runs/yolo-video/`. When too few non-collinear keypoints are visible, camera motion from optical flow carries the homography forward.
+Step 3 writes `121364_0_homography.mp4` (pitch-line overlay, keypoints, team-coloured player boxes with track IDs, a highlighted ball and a 2D minimap in team colours), `121364_0_pitch_positions.csv` (tracked objects in pitch metres and map pixels) and `121364_0_homographies.csv` (per-frame 3x3 matrices) to `runs/yolo-video/`. When too few non-collinear keypoints are visible, camera motion from optical flow carries the homography forward.
 
 To suppress single-frame keypoint "twitches", the video is processed offline: each keypoint is replaced by the median of its detections over neighbouring frames, after correcting for camera motion (`--keypoint-smooth-radius`, default 3 frames per side). The homographies then get a centred, motion-compensated average (`--homography-smooth-radius`, default 2). Neither adds lag. In the video, hollow yellow circles are the raw model detections and filled red dots are the smoothed keypoints. See [docs/pitch-homography.md](docs/pitch-homography.md) for the full write-up.
 

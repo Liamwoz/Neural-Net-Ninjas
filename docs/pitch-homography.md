@@ -24,6 +24,7 @@ change are useful for future work.
 9. [Video processing and rendering](#video-processing-and-rendering)
 10. [How to run](#how-to-run)
 11. [Limitations and next steps](#limitations-and-next-steps)
+12. [AI usage](#ai-usage)
 
 ## Overview of the pipeline
 
@@ -34,10 +35,10 @@ change are useful for future work.
 | 3 | `scripts/pitch_homography_video.py` | Predicts keypoints, estimates camera motion, smooths, fits homographies and renders the video and CSVs |
 | – | `scripts/pitch_keypoints.py` | Shared definitions: keypoint names, their positions on the pitch in metres, and the metres-to-map conversion |
 
-Player and ball positions come from the existing detection run
-(`runs/yolo-video/121364_0_detections.csv`, created by `scripts/yolo_video_experiment.py`).
-The homography pipeline does not detect players itself. It only projects those
-detections onto the map.
+Player, referee and ball positions come from the tracking model's output,
+`scripts/tracking_output.csv`: per frame, each player's box, track `id` and `team`, plus the
+ball's box. The homography pipeline does not detect players itself. It only projects those
+tracks onto the map.
 
 ## Data
 
@@ -267,21 +268,28 @@ described above. Only small arrays are kept, not the frames themselves, so memor
 
 **Pass 2: project and draw.** Each frame is read again and annotated:
 
-- **Player/ball projection.** The detections from `runs/yolo-video/121364_0_detections.csv`
-  are matched by frame number. The **bottom-centre of each box** (the feet) is projected with
+- **Player/ball projection.** The tracks from `scripts/tracking_output.csv` are matched by
+  frame number (the CSV counts frames from 1, the video from 0). Each object's ground point
+  (bottom-centre of the box for players, the ball's centre) is projected with
   `cv2.perspectiveTransform`, using the image→pitch homography for metres and the
-  image→map homography (`pitch_to_map @ image_to_pitch`) for minimap pixels. Only `person` and
-  `sports ball` are kept, and anything more than 3 m outside the pitch (spectators, staff) is
-  dropped.
+  image→map homography (`pitch_to_map @ image_to_pitch`) for minimap pixels. Anything more
+  than 3 m outside the pitch is dropped.
+- **Teams.** Team `0` is the red team, `1` the green team and `2` the referee. The tracker
+  reports team `-1` while it hasn't decided yet (mostly a track's first ~23 frames), so each
+  track ID gets the team it is assigned most often. Five short-lived tracks that never get a
+  team stay grey ("Unknown").
+- **Boxes.** Players and the referee get a box in their team colour with their track ID
+  (`#7`). The ball gets an **orange** padded box, a ring and a "BALL" pointer above it, since
+  its own box is only about 12x10 px.
 - **Pitch-line overlay.** The white lines of `scripts/images.png` are turned into a mask,
   warped into the camera view with `cv2.warpPerspective` using the inverse (map→image)
   homography, and painted **magenta**. If the homography is right, the magenta lines sit
   exactly on the real pitch lines. This makes it the quickest visual check of the whole pipeline.
 - **Keypoints.** Raw detections are drawn as hollow yellow circles, and smoothed keypoints as
   filled red dots labelled with name and confidence.
-- **Minimap.** A copy of the map image is placed in the top-right corner with player dots
-  (yellow-orange), the ball (white) and the camera's **field of view**, which is the four
-  frame corners projected onto the map.
+- **Minimap.** A copy of the map image is placed in the top-right corner, with dots in
+  team colours, the ball as an orange dot with a white ring, the camera's **field of view**
+  (the four frame corners projected onto the map), and a colour legend underneath.
 - **Status line.** Bottom-left: frame number and where the homography came from
   (`keypoints`, `keypoints+motion`, `partial-keypoints+motion`, `motion`, `none`).
 
@@ -301,14 +309,16 @@ python scripts\pitch_homography_video.py video\121364_0.mp4
 Outputs in `runs/yolo-video/`:
 
 - `121364_0_homography.mp4`: pitch lines projected onto the video (magenta), keypoints,
-  player/ball dots, and a minimap with player positions and the camera's field of view.
-- `121364_0_pitch_positions.csv`: per detection: frame, class, confidence, image foot
-  point, **pitch position in metres**, and map pixel position. Detections more than 3 m
-  outside the pitch are dropped.
+  team-coloured player boxes with track IDs, the highlighted ball, and a minimap with team
+  colours, the ball and the camera's field of view.
+- `121364_0_pitch_positions.csv`: per tracked object: video frame (0-based), object type,
+  track ID, team and team name, image ground point, **pitch position in metres**, and map
+  pixel position. Objects more than 3 m outside the pitch are dropped.
 - `121364_0_homographies.csv`: per frame: source/status, keypoints used, mean
   reprojection error (m) and the 3x3 image→pitch matrix (`h00` … `h22`).
 
-Useful options for `pitch_homography_video.py`: `--kpt-conf` (default 0.4),
+Useful options for `pitch_homography_video.py`: `--tracks` (tracking CSV),
+`--tracks-frame-offset` (default 1), `--kpt-conf` (default 0.4),
 `--keypoint-smooth-radius`, `--homography-smooth-radius` (0 disables either),
 `--keypoint-weight`, `--gate-m`, `--max-frames` for quick tests. `train_pitch_pose.py`
 accepts `--model`, `--epochs`, `--imgsz` and `--device` (e.g. `0` for a GPU).
@@ -324,3 +334,17 @@ added with `git add -f` to be committed.
 - **Error budget.** About 5 px keypoint error currently translates to roughly 0.3 m on the
   pitch. More training frames, a larger model (`yolo11s-pose`), or a higher `--imgsz` are the
   most direct ways to reduce it.
+
+## AI usage
+
+The ideas and decisions behind this pipeline were ours: what to build, which approaches to
+try, and which results to keep. AI was mainly used to generate the code and to run the
+experiments and measurements.
+
+- **Claude Opus 5.5** was used to generate the code (dataset conversion, training and the
+  homography/video script) and the first drafts of this documentation.
+- **GPT-6 Luna** was used for research, such as explaining how YOLO pose works, why
+  version 2 performs better, and what degenerate keypoint layouts are.
+
+All results reported in this document were measured on our data, and the output video was
+checked visually.

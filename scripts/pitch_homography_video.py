@@ -11,8 +11,9 @@ The video is processed offline in two passes:
    bridges frames where only collinear keypoints are visible (e.g. just the penalty-box line).
 4. Homography smoothing: a centred, motion-compensated weighted average over neighbouring
    frames removes the remaining small jitter.
-5. Pass 2: player/ball detections from ``scripts/yolo_video_experiment.py`` (bottom-centre
-   of each box) are projected onto the map image and the annotated video is written.
+5. Pass 2: the tracked players, referee and ball from ``scripts/tracking_output.csv``
+   (ground point of each box) are projected onto the map image in their team colours and
+   the annotated video is written.
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from __future__ import annotations
 import argparse
 import csv
 from collections import Counter, defaultdict
+from dataclasses import dataclass
 from pathlib import Path
 
 import cv2
@@ -36,7 +38,23 @@ from pitch_keypoints import (
     pitch_m_to_map_matrix,
 )
 
-MAP_DOT_COLORS = {"person": (0, 215, 255), "sports ball": (255, 255, 255)}
+# Team ids from the tracking model; colours (BGR) match the jerseys in video/121364_0.mp4.
+TEAM_STYLES = {
+    0: ("Red team", (40, 40, 230)),
+    1: ("Green team", (90, 255, 150)),
+    2: ("Referee", (30, 30, 30)),
+    -1: ("Unknown", (170, 170, 170)),
+}
+BALL_COLOR = (0, 140, 255)
+
+
+@dataclass
+class TrackedObject:
+    object_type: str
+    track_id: int | None
+    team: int
+    ground: tuple[float, float]
+    box: tuple[float, float, float, float]
 
 
 def parse_args() -> argparse.Namespace:
@@ -44,10 +62,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("video", type=Path, nargs="?", default=Path("video/121364_0.mp4"))
     parser.add_argument("--pose-model", type=Path, default=Path("model/pitch_keypoints.pt"))
     parser.add_argument(
-        "--detections",
+        "--tracks",
         type=Path,
-        default=None,
-        help="Detections CSV (default: runs/yolo-video/<video>_detections.csv)",
+        default=Path("scripts/tracking_output.csv"),
+        help="Tracking CSV with players (id, team) and ball per frame",
+    )
+    parser.add_argument(
+        "--tracks-frame-offset",
+        type=int,
+        default=1,
+        help="Subtract this from the tracking CSV frame numbers to get 0-based video frames",
     )
     parser.add_argument("--map-image", type=Path, default=Path("scripts/images.png"))
     parser.add_argument("--output-dir", type=Path, default=Path("runs/yolo-video"))
@@ -93,15 +117,39 @@ def normalize(h: np.ndarray) -> np.ndarray:
     return h / h[2, 2]
 
 
-def load_detections(path: Path) -> dict[int, list[dict]]:
-    detections: dict[int, list[dict]] = defaultdict(list)
+def load_tracks(path: Path, frame_offset: int) -> dict[int, list[TrackedObject]]:
+    """Load tracked players/ball per 0-based video frame.
+
+    The tracker reports team -1 while a track's team is not yet decided (mostly its first
+    frames), so each track gets the team it is assigned most often.
+    """
+    tracks: dict[int, list[TrackedObject]] = defaultdict(list)
     if not path.is_file():
-        print(f"Detections CSV not found ({path}); only the homography will be visualised.")
-        return detections
+        print(f"Tracking CSV not found ({path}); only the homography will be visualised.")
+        return tracks
     with path.open(newline="", encoding="utf-8") as f:
-        for row in csv.DictReader(f):
-            detections[int(row["frame"])].append(row)
-    return detections
+        rows = list(csv.DictReader(f))
+
+    team_votes: dict[int, Counter] = defaultdict(Counter)
+    for row in rows:
+        if row["id"] and row["team"] and int(float(row["team"])) >= 0:
+            team_votes[int(float(row["id"]))][int(float(row["team"]))] += 1
+
+    for row in rows:
+        track_id = int(float(row["id"])) if row["id"] else None
+        team = -1
+        if track_id is not None and team_votes[track_id]:
+            team = team_votes[track_id].most_common(1)[0][0]
+        tracks[int(row["frame"]) - frame_offset].append(
+            TrackedObject(
+                object_type=row["object_type"],
+                track_id=track_id,
+                team=team,
+                ground=(float(row["ground_x"]), float(row["ground_y"])),
+                box=tuple(float(row[k]) for k in ("x1", "y1", "x2", "y2")),
+            )
+        )
+    return tracks
 
 
 def reprojection_errors(h: np.ndarray, image_points: np.ndarray, pitch_points: np.ndarray) -> np.ndarray:
@@ -359,6 +407,65 @@ def draw_pitch_overlay(frame: np.ndarray, lines_mask: np.ndarray, image_to_map: 
     frame[warped > 0] = (255, 0, 255)
 
 
+def text_color_for(background: tuple[int, int, int]) -> tuple[int, int, int]:
+    b, g, r = background
+    return (0, 0, 0) if 0.114 * b + 0.587 * g + 0.299 * r > 140 else (255, 255, 255)
+
+
+def draw_player(frame: np.ndarray, obj: TrackedObject) -> None:
+    color = TEAM_STYLES[obj.team][1]
+    x1, y1, x2, y2 = (int(round(v)) for v in obj.box)
+    cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+    if obj.track_id is not None:
+        label = f"#{obj.track_id}"
+        (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+        cv2.rectangle(frame, (x1, y1 - th - 6), (x1 + tw + 4, y1), color, -1)
+        cv2.putText(frame, label, (x1 + 2, y1 - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.5, text_color_for(color), 1,
+                    cv2.LINE_AA)
+
+
+def draw_ball(frame: np.ndarray, obj: TrackedObject) -> None:
+    """Ball gets a padded box, a ring and a pointer above it so it stands out from players."""
+    x1, y1, x2, y2 = obj.box
+    cx, cy = int(round((x1 + x2) / 2)), int(round((y1 + y2) / 2))
+    pad = 6
+    cv2.rectangle(frame, (int(x1) - pad, int(y1) - pad), (int(x2) + pad, int(y2) + pad), BALL_COLOR, 3)
+    cv2.circle(frame, (cx, cy), 24, (255, 255, 255), 2, cv2.LINE_AA)
+    cv2.circle(frame, (cx, cy), 27, BALL_COLOR, 3, cv2.LINE_AA)
+    tip_y = cy - 32
+    pointer = np.array([[cx, tip_y], [cx - 12, tip_y - 20], [cx + 12, tip_y - 20]], dtype=np.int32)
+    cv2.fillPoly(frame, [pointer], BALL_COLOR)
+    cv2.polylines(frame, [pointer], True, (0, 0, 0), 1, cv2.LINE_AA)
+    cv2.putText(frame, "BALL", (cx - 24, tip_y - 26), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 4, cv2.LINE_AA)
+    cv2.putText(frame, "BALL", (cx - 24, tip_y - 26), cv2.FONT_HERSHEY_SIMPLEX, 0.7, BALL_COLOR, 2, cv2.LINE_AA)
+
+
+def draw_map_marker(minimap: np.ndarray, point: np.ndarray, obj: TrackedObject) -> None:
+    center = (int(round(point[0])), int(round(point[1])))
+    if obj.object_type == "ball":
+        cv2.circle(minimap, center, 11, (0, 0, 0), 1, cv2.LINE_AA)
+        cv2.circle(minimap, center, 9, (255, 255, 255), 2, cv2.LINE_AA)
+        cv2.circle(minimap, center, 6, BALL_COLOR, -1, cv2.LINE_AA)
+        cv2.circle(minimap, center, 6, (0, 0, 0), 1, cv2.LINE_AA)
+        return
+    color = TEAM_STYLES[obj.team][1]
+    outline = (255, 255, 255) if obj.team == 2 else (0, 0, 0)
+    cv2.circle(minimap, center, 5, color, -1, cv2.LINE_AA)
+    cv2.circle(minimap, center, 5, outline, 1, cv2.LINE_AA)
+
+
+def build_legend(width: int, teams: list[int]) -> np.ndarray:
+    legend = np.full((28, width, 3), 95, dtype=np.uint8)
+    x = 10
+    entries = [(TEAM_STYLES[t][0], TrackedObject("player", None, t, (0, 0), (0, 0, 0, 0))) for t in teams]
+    entries.append(("Ball", TrackedObject("ball", None, -1, (0, 0), (0, 0, 0, 0))))
+    for name, obj in entries:
+        draw_map_marker(legend, np.array([x + 8, 14]), obj)
+        cv2.putText(legend, name, (x + 22, 19), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1, cv2.LINE_AA)
+        x += 22 + cv2.getTextSize(name, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)[0][0] + 16
+    return legend
+
+
 def main() -> None:
     args = parse_args()
     if not args.video.is_file():
@@ -367,8 +474,7 @@ def main() -> None:
         raise FileNotFoundError(
             f"Pose model not found: {args.pose_model}. Train it with scripts/train_pitch_pose.py."
         )
-    detections_path = args.detections or Path("runs/yolo-video") / f"{args.video.stem}_detections.csv"
-    detections = load_detections(detections_path)
+    tracks = load_tracks(args.tracks, args.tracks_frame_offset)
 
     map_image = cv2.imread(str(args.map_image))
     if map_image is None:
@@ -377,6 +483,11 @@ def main() -> None:
         (map_image.min(axis=2) > 200).astype(np.uint8) * 255, np.ones((2, 2), np.uint8)
     )
     pitch_to_map = pitch_m_to_map_matrix()
+    teams_present = sorted(
+        {obj.team for objs in tracks.values() for obj in objs if obj.object_type == "player"},
+        key=lambda t: (t < 0, t),
+    )
+    legend = build_legend(map_image.shape[1], teams_present)
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     output_video = args.output_dir / f"{args.video.stem}_homography.mp4"
@@ -418,7 +529,8 @@ def main() -> None:
     ) as h_file:
         pos_writer = csv.writer(pos_file)
         pos_writer.writerow(
-            ["frame", "class_name", "confidence", "image_x", "image_y", "pitch_x_m", "pitch_y_m", "map_x", "map_y"]
+            ["frame", "object_type", "track_id", "team", "team_name", "image_x", "image_y",
+             "pitch_x_m", "pitch_y_m", "map_x", "map_y"]
         )
         h_writer = csv.writer(h_file)
         h_writer.writerow(
@@ -447,28 +559,33 @@ def main() -> None:
 
             minimap = map_image.copy()
             if image_to_pitch is not None:
+                draw_pitch_overlay(frame, lines_mask, pitch_to_map @ image_to_pitch)
+            # Players first, ball last so it is drawn on top.
+            objects = sorted(tracks.get(frame_number, []), key=lambda o: o.object_type == "ball")
+            for obj in objects:
+                if obj.object_type == "ball":
+                    draw_ball(frame, obj)
+                else:
+                    draw_player(frame, obj)
+
+            if image_to_pitch is not None:
                 image_to_map = pitch_to_map @ image_to_pitch
-                draw_pitch_overlay(frame, lines_mask, image_to_map)
-                rows = detections.get(frame_number, [])
-                if rows:
-                    feet = np.array(
-                        [[(float(r["x1"]) + float(r["x2"])) / 2, float(r["y2"])] for r in rows], dtype=np.float64
-                    )
-                    pitch_xy = cv2.perspectiveTransform(feet.reshape(-1, 1, 2), image_to_pitch).reshape(-1, 2)
-                    map_xy = cv2.perspectiveTransform(feet.reshape(-1, 1, 2), image_to_map).reshape(-1, 2)
-                    for row, foot, p, m in zip(rows, feet, pitch_xy, map_xy):
+                if objects:
+                    ground = np.array([obj.ground for obj in objects], dtype=np.float64).reshape(-1, 1, 2)
+                    pitch_xy = cv2.perspectiveTransform(ground, image_to_pitch).reshape(-1, 2)
+                    map_xy = cv2.perspectiveTransform(ground, image_to_map).reshape(-1, 2)
+                    for obj, p, m in zip(objects, pitch_xy, map_xy):
                         on_pitch = -3 <= p[0] <= PITCH_LENGTH_M + 3 and -3 <= p[1] <= PITCH_WIDTH_M + 3
-                        if row["class_name"] not in MAP_DOT_COLORS or not on_pitch:
+                        if not on_pitch:
                             continue
+                        is_ball = obj.object_type == "ball"
                         pos_writer.writerow(
-                            [frame_number, row["class_name"], row["confidence"], f"{foot[0]:.1f}", f"{foot[1]:.1f}",
+                            [frame_number, obj.object_type, "" if obj.track_id is None else obj.track_id,
+                             "" if is_ball else obj.team, "Ball" if is_ball else TEAM_STYLES[obj.team][0],
+                             f"{obj.ground[0]:.1f}", f"{obj.ground[1]:.1f}",
                              f"{p[0]:.2f}", f"{p[1]:.2f}", f"{m[0]:.1f}", f"{m[1]:.1f}"]
                         )
-                        color = MAP_DOT_COLORS[row["class_name"]]
-                        radius = 3 if row["class_name"] == "sports ball" else 5
-                        cv2.circle(minimap, (int(m[0]), int(m[1])), radius, color, -1)
-                        cv2.circle(minimap, (int(m[0]), int(m[1])), radius, (0, 0, 0), 1)
-                        cv2.circle(frame, (int(foot[0]), int(foot[1])), 4, color, -1)
+                        draw_map_marker(minimap, m, obj)
 
                 # Camera field of view on the minimap.
                 corners = np.array([[0, 0], [width, 0], [width, height], [0, height]], dtype=np.float64)
@@ -487,10 +604,11 @@ def main() -> None:
 
             cv2.putText(frame, f"frame {frame_number} | H: {status}", (20, height - 20),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
-            mh, mw = minimap.shape[:2]
+            panel = np.vstack([minimap, legend])
+            mh, mw = panel.shape[:2]
             x0, y0 = width - mw - 20, 20
             frame[y0 - 2 : y0 + mh + 2, x0 - 2 : x0 + mw + 2] = 0
-            frame[y0 : y0 + mh, x0 : x0 + mw] = minimap
+            frame[y0 : y0 + mh, x0 : x0 + mw] = panel
             writer.write(frame)
 
     capture.release()
