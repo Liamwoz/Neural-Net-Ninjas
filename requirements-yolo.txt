@@ -9,6 +9,6 @@ tqdm>=4.66,<5
 
 # Tracking and team classification (scripts/run_tracking_with_jersey.py,
 # scripts/jersey_classifier.py): arrays, Hungarian matching, K-Means
-numpy==2.0.2
-scipy==1.13.1
-scikit-learn==1.6.1
+numpy>=2.1,<3
+scipy>=1.15,<2
+scikit-learn>=1.6,<2
