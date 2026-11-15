@@ -65,6 +65,22 @@ To suppress single-frame keypoint "twitches", the video is processed offline: ea
 - Label schema and annotation rules are agreed and documented
 - At least one YOLO baseline run is documented with settings and observations
 
+## Frontend
+
+See [frontend/README.md](frontend/README.md) for the local dashboard and projected-data format.
+
+## Local model training
+
+Use [the local YOLO26 training notebook](notebooks/local_yolo26_training.ipynb) for the v7 export's original full frames and existing splits, training-only color and geometric augmentations, and evaluation.
+
+For the RX 6800 XT on Windows, select `.venv-directml\Scripts\python.exe` as the notebook kernel and restart the kernel before running the cells. This environment has been set up locally. To recreate it with Python 3.12:
+
+```powershell
+py -3.12 -m venv .venv-directml
+.\.venv-directml\Scripts\python.exe -m pip install -r requirements-directml.txt
+```
+
+The notebook prints the selected Python and DirectML GPU. Its experimental bridge runs the model on the GPU, while loss calculation and validation run on CPU to work around unsupported DirectML operations. GPU memory reporting is unavailable, and the mixed workflow can be slow. `torch.cuda.is_available()` remains false with DirectML. The bridge is tied to the versions in `requirements-directml.txt`; use the normal YOLO requirements for the other notebooks.
 ## Tracking and Tactical Analytics
 
 Extra Mile work. Full documentation and error analysis are in [docs/tracking_team_classification.md](docs/tracking_team_classification.md).

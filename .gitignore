@@ -124,6 +124,7 @@ StyleCopReport.xml
 
 # YOLO experiment outputs and downloaded model weights
 runs/
+*.pt
 !model/weights.pt
 *.vspscc
 *.vssscc
@@ -434,6 +435,14 @@ FodyWeavers.xsd
 
 #videos
 
+*.mp4
+
+# Track all files and subdirectories in the model folder.
+!/model/**
+
+# Local datasets and videos.
+/data/
+/.venv-directml/
 # pycharm
 .idea/
 
