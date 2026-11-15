@@ -439,5 +439,6 @@ FodyWeavers.xsd
 # Track all files and subdirectories in the model folder.
 !/model/**
 
-# Local Roboflow training dataset.
-/data/Football Players and Ball.v6i.yolo26/
+# Local datasets and videos.
+/data/
+/.venv-directml/

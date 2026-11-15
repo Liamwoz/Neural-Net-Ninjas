@@ -1,5 +1,7 @@
 # YOLO inference and training
 ultralytics>=8.4.178,<9
+PyYAML>=6,<7
+pandas>=2,<3
 
 # Video frame reading/writing and image utilities
 opencv-python>=4.10,<5
