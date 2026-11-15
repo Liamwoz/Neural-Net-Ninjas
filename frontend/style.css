@@ -3,3 +3,6 @@
 .button:disabled{opacity:.5;cursor:not-allowed}
 
 .analysis-progress{background:#fff;border:1px solid #e0e9dc;border-radius:9px;padding:15px 17px;margin:0 0 14px}.analysis-progress[hidden]{display:none}.progress-heading{display:flex;align-items:center;gap:9px;font-size:12px;color:#365443}.progress-heading span:last-child{margin-left:auto;color:#6b8d63;font-weight:700}.spinner{width:15px;height:15px;border:2px solid #dcebd4;border-top-color:#72a65c;border-radius:50%;animation:spin .8s linear infinite}.progress-track{height:6px;border-radius:6px;background:#eaf0e7;overflow:hidden;margin:12px 0 7px}.progress-track div{height:100%;width:0;background:#8bc467;transition:width .3s}.progress-detail{font-size:10px;color:#829488}@keyframes spin{to{transform:rotate(360deg)}}
+
+/* Team colors match the labels drawn over the footage and pitch markers. */
+.legend-dot.home{background:#ed6a62}.legend-dot.away{background:#8ee393}

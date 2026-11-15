@@ -79,9 +79,10 @@ MAX_APPEARANCE_UPDATE_DISTANCE = 0.45
 # LOAD YOLO
 # =========================================================
 
-model = YOLO(MODEL_PATH)
-
-print(model.names)
+# Load the model only when this file is run as a script.
+if __name__ == "__main__":
+    model = YOLO(MODEL_PATH)
+    print(model.names)
 
 
 # =========================================================
@@ -1596,406 +1597,499 @@ def draw_ball(
 # CSV OUTPUT
 # =========================================================
 
-tracking_csv = open(
-    "tracking_output.csv",
-    "w",
-    newline="",
-    encoding="utf-8"
-)
-
-tracking_csv_writer = csv.writer(
-    tracking_csv
-)
-
-tracking_csv_writer.writerow(
-    [
-        "frame",
-        "class_id",
-        "object_type",
-        "id",
-        "team",
-        "ground_x",
-        "ground_y",
-        "x1",
-        "y1",
-        "x2",
-        "y2"
-    ]
-)
-
-
-# =========================================================
-# VIDEO
-# =========================================================
-
-cap = cv2.VideoCapture(
-    VIDEO_PATH
-)
-
-
-while cap.isOpened():
-
-    success, frame = (
-        cap.read()
+if __name__ == "__main__":
+    tracking_csv = open(
+        "tracking_output.csv",
+        "w",
+        newline="",
+        encoding="utf-8"
     )
 
-
-    if not success:
-        break
-
-
-    frame_number += 1
-
-
-    # =====================================================
-    # YOLO + BOT-SORT
-    #
-    # BoT-SORT IDs are deliberately NOT trusted as the
-    # stable identity anymore.
-    # =====================================================
-
-    results = model.track(
-        frame,
-        persist=True,
-        tracker=TRACKER_CONFIG,
-        classes=[PLAYER_CLASS],
-        conf=0.60,
-        verbose=False
+    tracking_csv_writer = csv.writer(
+        tracking_csv
     )
 
-
-    result = results[0]
-
-
-    # =====================================================
-    # BALL DETECTION
-    #
-    # Keep ball detection separate from the player tracker.
-    # This prevents the soccer ball from entering the stable
-    # Hungarian player-ID system.
-    #
-    # Use a lower confidence threshold because the ball is
-    # much smaller than a player in this video.
-    # =====================================================
-
-    ball_result = model.predict(
-        frame,
-        classes=[BALL_CLASS],
-        conf=0.25,
-        verbose=False
-    )[0]
-
-    ball_box = None
-
-    if (
-        ball_result.boxes is not None
-        and
-        len(ball_result.boxes) > 0
-    ):
-
-        ball_boxes = (
-            ball_result.boxes.xyxy
-            .cpu()
-            .tolist()
-        )
-
-        ball_confidences = (
-            ball_result.boxes.conf
-            .cpu()
-            .tolist()
-        )
-
-        # Draw only the highest-confidence ball detection
-        # so multiple weak detections do not clutter the frame.
-        best_ball_index = int(
-            np.argmax(
-                ball_confidences
-            )
-        )
-
-        ball_box = ball_boxes[
-            best_ball_index
+    tracking_csv_writer.writerow(
+        [
+            "frame",
+            "class_id",
+            "object_type",
+            "id",
+            "team",
+            "ground_x",
+            "ground_y",
+            "x1",
+            "y1",
+            "x2",
+            "y2"
         ]
+    )
 
 
-    # =====================================================
-    # CURRENT DETECTIONS
-    # =====================================================
+    # =========================================================
+    # VIDEO
+    # =========================================================
 
-    # Stable IDs visible in this frame (for goalkeeper role)
-    visible_ids = []
-
-    if (
-        result.boxes is not None
-        and
-        len(result.boxes) > 0
-    ):
+    cap = cv2.VideoCapture(
+        VIDEO_PATH
+    )
 
 
-        boxes = (
-            result.boxes.xyxy
-            .cpu()
-            .tolist()
+    while cap.isOpened():
+
+        success, frame = (
+            cap.read()
         )
 
 
-        detections = []
+        if not success:
+            break
 
 
-        # =================================================
-        # BUILD DETECTION FEATURES FIRST
-        # =================================================
+        frame_number += 1
 
-        for index, box in enumerate(
-            boxes
+
+        # =====================================================
+        # YOLO + BOT-SORT
+        #
+        # BoT-SORT IDs are deliberately NOT trusted as the
+        # stable identity anymore.
+        # =====================================================
+
+        results = model.track(
+            frame,
+            persist=True,
+            tracker=TRACKER_CONFIG,
+            classes=[PLAYER_CLASS],
+            conf=0.60,
+            verbose=False
+        )
+
+
+        result = results[0]
+
+
+        # =====================================================
+        # BALL DETECTION
+        #
+        # Keep ball detection separate from the player tracker.
+        # This prevents the soccer ball from entering the stable
+        # Hungarian player-ID system.
+        #
+        # Use a lower confidence threshold because the ball is
+        # much smaller than a player in this video.
+        # =====================================================
+
+        ball_result = model.predict(
+            frame,
+            classes=[BALL_CLASS],
+            conf=0.25,
+            verbose=False
+        )[0]
+
+        ball_box = None
+
+        if (
+            ball_result.boxes is not None
+            and
+            len(ball_result.boxes) > 0
+        ):
+
+            ball_boxes = (
+                ball_result.boxes.xyxy
+                .cpu()
+                .tolist()
+            )
+
+            ball_confidences = (
+                ball_result.boxes.conf
+                .cpu()
+                .tolist()
+            )
+
+            # Draw only the highest-confidence ball detection
+            # so multiple weak detections do not clutter the frame.
+            best_ball_index = int(
+                np.argmax(
+                    ball_confidences
+                )
+            )
+
+            ball_box = ball_boxes[
+                best_ball_index
+            ]
+
+
+        # =====================================================
+        # CURRENT DETECTIONS
+        # =====================================================
+
+        # Stable IDs visible in this frame (for goalkeeper role)
+        visible_ids = []
+
+        if (
+            result.boxes is not None
+            and
+            len(result.boxes) > 0
         ):
 
 
-            x1, y1, x2, y2 = (
-                box
+            boxes = (
+                result.boxes.xyxy
+                .cpu()
+                .tolist()
             )
 
 
-            # -------------------------------------------------
-            # MATCH POSITION
-            #
-            # IMPORTANT:
-            #
-            # Use BOUNDING BOX CENTRE for identity.
-            #
-            # This is more stable than bottom-center when
-            # a player falls horizontally.
-            # -------------------------------------------------
-
-            match_position = (
-
-                float(
-                    (
-                        x1 + x2
-                    )
-                    / 2
-                ),
-
-                float(
-                    (
-                        y1 + y2
-                    )
-                    / 2
-                )
-            )
+            detections = []
 
 
-            # -------------------------------------------------
-            # Ground position for trajectory / tactical map
-            # -------------------------------------------------
+            # =================================================
+            # BUILD DETECTION FEATURES FIRST
+            # =================================================
 
-            ground_position = (
-
-                float(
-                    (
-                        x1 + x2
-                    )
-                    / 2
-                ),
-
-                float(
-                    y2
-                )
-            )
+            for index, box in enumerate(
+                boxes
+            ):
 
 
-            # -------------------------------------------------
-            # Appearance
-            # -------------------------------------------------
-
-            appearance = extract_appearance(
-                frame,
-                box
-            )
-
-
-            # -------------------------------------------------
-            # Is player overlapping someone?
-            # -------------------------------------------------
-
-            overlapping = (
-                detection_is_overlapping(
-                    index,
-                    boxes
-                )
-            )
-
-
-            good_view = (
-                is_good_appearance_view(
+                x1, y1, x2, y2 = (
                     box
                 )
-            )
 
 
-            # -------------------------------------------------
-            # Jersey-specific occlusion check
-            #
-            # Different from the general overlap flag:
-            # nearby players are still allowed, as long as
-            # this player's upper jersey region is visible.
-            # -------------------------------------------------
+                # -------------------------------------------------
+                # MATCH POSITION
+                #
+                # IMPORTANT:
+                #
+                # Use BOUNDING BOX CENTRE for identity.
+                #
+                # This is more stable than bottom-center when
+                # a player falls horizontally.
+                # -------------------------------------------------
 
-            jersey_occluded = (
-                jersey_region_is_occluded(
-                    index,
-                    boxes
+                match_position = (
+
+                    float(
+                        (
+                            x1 + x2
+                        )
+                        / 2
+                    ),
+
+                    float(
+                        (
+                            y1 + y2
+                        )
+                        / 2
+                    )
                 )
-            )
 
 
-            detections.append(
-                {
-                    "box":
-                        box,
+                # -------------------------------------------------
+                # Ground position for trajectory / tactical map
+                # -------------------------------------------------
 
-                    "match_position":
-                        match_position,
+                ground_position = (
 
-                    "ground_position":
-                        ground_position,
+                    float(
+                        (
+                            x1 + x2
+                        )
+                        / 2
+                    ),
 
-                    "appearance":
-                        appearance,
-
-                    "overlapping":
-                        overlapping,
-
-                    "good_view":
-                        good_view,
-
-                    "jersey_occluded":
-                        jersey_occluded
-                }
-            )
+                    float(
+                        y2
+                    )
+                )
 
 
-        # =================================================
-        # GLOBAL ID MATCHING
-        # =================================================
+                # -------------------------------------------------
+                # Appearance
+                # -------------------------------------------------
 
-        assignments = (
-            assign_stable_ids(
-                detections,
-                frame_number
-            )
-        )
-
-        visible_ids = list(
-            assignments.values()
-        )
-
-
-        # =================================================
-        # UPDATE AFTER ASSIGNMENT
-        # =================================================
-
-        for detection_index, det in enumerate(
-            detections
-        ):
-
-
-            display_id = (
-                assignments[
-                    detection_index
-                ]
-            )
-
-
-            # -------------------------------------------------
-            # Don't LEARN appearance during overlap/fall.
-            #
-            # But current appearance was still allowed to
-            # help decide which old ID this detection matches.
-            # -------------------------------------------------
-
-            allow_appearance_update = (
-
-                det["good_view"]
-
-                and
-
-                not det["overlapping"]
-            )
-
-
-            update_track(
-                display_id,
-
-                det["match_position"],
-
-                det["appearance"],
-
-                frame_number,
-
-                allow_appearance_update
-            )
-
-
-            # =================================================
-            # JERSEY / TEAM CLASSIFICATION
-            # =================================================
-
-            # =================================================
-            # REFEREE DETECTION
-            #
-            # Run on EVERY good player view, even when jersey
-            # learning is skipped because of occlusion.
-            # =================================================
-
-            if det["good_view"]:
-                jersey_classifier.observe_referee(
-                    display_id,
+                appearance = extract_appearance(
                     frame,
-                    det["box"]
+                    box
+                )
+
+
+                # -------------------------------------------------
+                # Is player overlapping someone?
+                # -------------------------------------------------
+
+                overlapping = (
+                    detection_is_overlapping(
+                        index,
+                        boxes
+                    )
+                )
+
+
+                good_view = (
+                    is_good_appearance_view(
+                        box
+                    )
+                )
+
+
+                # -------------------------------------------------
+                # Jersey-specific occlusion check
+                #
+                # Different from the general overlap flag:
+                # nearby players are still allowed, as long as
+                # this player's upper jersey region is visible.
+                # -------------------------------------------------
+
+                jersey_occluded = (
+                    jersey_region_is_occluded(
+                        index,
+                        boxes
+                    )
+                )
+
+
+                detections.append(
+                    {
+                        "box":
+                            box,
+
+                        "match_position":
+                            match_position,
+
+                        "ground_position":
+                            ground_position,
+
+                        "appearance":
+                            appearance,
+
+                        "overlapping":
+                            overlapping,
+
+                        "good_view":
+                            good_view,
+
+                        "jersey_occluded":
+                            jersey_occluded
+                    }
                 )
 
 
             # =================================================
-            # JERSEY / TEAM CLASSIFICATION
-            #
-            # RED/GREEN K-Means still uses the independent
-            # player box and skips only heavy shirt occlusion.
+            # GLOBAL ID MATCHING
             # =================================================
 
-            if (
-                det["good_view"]
-                and
-                not det["jersey_occluded"]
+            assignments = (
+                assign_stable_ids(
+                    detections,
+                    frame_number
+                )
+            )
+
+            visible_ids = list(
+                assignments.values()
+            )
+
+
+            # =================================================
+            # UPDATE AFTER ASSIGNMENT
+            # =================================================
+
+            for detection_index, det in enumerate(
+                detections
             ):
-                jersey_classifier.update_player(
-                    display_id,
-                    frame,
-                    det["box"]
+
+
+                display_id = (
+                    assignments[
+                        detection_index
+                    ]
                 )
 
 
-            # =================================================
-            # CSV OUTPUT
-            # =================================================
+                # -------------------------------------------------
+                # Don't LEARN appearance during overlap/fall.
+                #
+                # But current appearance was still allowed to
+                # help decide which old ID this detection matches.
+                # -------------------------------------------------
 
-            ground_x, ground_y = (
-                det["ground_position"]
+                allow_appearance_update = (
+
+                    det["good_view"]
+
+                    and
+
+                    not det["overlapping"]
+                )
+
+
+                update_track(
+                    display_id,
+
+                    det["match_position"],
+
+                    det["appearance"],
+
+                    frame_number,
+
+                    allow_appearance_update
+                )
+
+
+                # =================================================
+                # JERSEY / TEAM CLASSIFICATION
+                # =================================================
+
+                # =================================================
+                # REFEREE DETECTION
+                #
+                # Run on EVERY good player view, even when jersey
+                # learning is skipped because of occlusion.
+                # =================================================
+
+                if det["good_view"]:
+                    jersey_classifier.observe_referee(
+                        display_id,
+                        frame,
+                        det["box"]
+                    )
+
+
+                # =================================================
+                # JERSEY / TEAM CLASSIFICATION
+                #
+                # RED/GREEN K-Means still uses the independent
+                # player box and skips only heavy shirt occlusion.
+                # =================================================
+
+                if (
+                    det["good_view"]
+                    and
+                    not det["jersey_occluded"]
+                ):
+                    jersey_classifier.update_player(
+                        display_id,
+                        frame,
+                        det["box"]
+                    )
+
+
+                # =================================================
+                # CSV OUTPUT
+                # =================================================
+
+                ground_x, ground_y = (
+                    det["ground_position"]
+                )
+
+                x1, y1, x2, y2 = (
+                    det["box"]
+                )
+
+                tracking_csv_writer.writerow(
+                    [
+                        frame_number,
+                        PLAYER_CLASS,
+                        "player",
+                        display_id,
+                        jersey_classifier.get_team(display_id),
+                        ground_x,
+                        ground_y,
+                        x1,
+                        y1,
+                        x2,
+                        y2
+                    ]
+                )
+
+
+                # =================================================
+                # TRAJECTORY
+                # =================================================
+
+                track_history[
+                    display_id
+                ].append(
+                    det[
+                        "ground_position"
+                    ]
+                )
+
+
+                if (
+                    len(
+                        track_history[
+                            display_id
+                        ]
+                    )
+                    >
+                    MAX_HISTORY
+                ):
+
+                    track_history[
+                        display_id
+                    ].pop(0)
+
+
+                # =================================================
+                # DRAW
+                # =================================================
+
+                draw_player(
+                    frame,
+
+                    det["box"],
+
+                    display_id,
+
+                    track_history[
+                        display_id
+                    ]
+                )
+
+
+        # =====================================================
+        # GOALKEEPER ROLE MEMORY
+        #
+        # Once per frame, after all players were observed.
+        # Also runs on frames without detections so that the
+        # goalkeeper's absence is measured correctly.
+        # =====================================================
+
+        jersey_classifier.end_frame(
+            frame_number,
+            visible_ids
+        )
+
+
+        # =====================================================
+        # DRAW BALL
+        # =====================================================
+
+        if ball_box is not None:
+
+            x1, y1, x2, y2 = ball_box
+
+            ball_x = float(
+                (x1 + x2) / 2
             )
 
-            x1, y1, x2, y2 = (
-                det["box"]
+            ball_y = float(
+                (y1 + y2) / 2
             )
 
             tracking_csv_writer.writerow(
                 [
                     frame_number,
-                    PLAYER_CLASS,
-                    "player",
-                    display_id,
-                    jersey_classifier.get_team(display_id),
-                    ground_x,
-                    ground_y,
+                    BALL_CLASS,
+                    "ball",
+                    "",
+                    "",
+                    ball_x,
+                    ball_y,
                     x1,
                     y1,
                     x2,
@@ -2003,135 +2097,43 @@ while cap.isOpened():
                 ]
             )
 
-
-            # =================================================
-            # TRAJECTORY
-            # =================================================
-
-            track_history[
-                display_id
-            ].append(
-                det[
-                    "ground_position"
-                ]
-            )
-
-
-            if (
-                len(
-                    track_history[
-                        display_id
-                    ]
-                )
-                >
-                MAX_HISTORY
-            ):
-
-                track_history[
-                    display_id
-                ].pop(0)
-
-
-            # =================================================
-            # DRAW
-            # =================================================
-
-            draw_player(
+            draw_ball(
                 frame,
-
-                det["box"],
-
-                display_id,
-
-                track_history[
-                    display_id
-                ]
+                ball_box
             )
 
 
-    # =====================================================
-    # GOALKEEPER ROLE MEMORY
-    #
-    # Once per frame, after all players were observed.
-    # Also runs on frames without detections so that the
-    # goalkeeper's absence is measured correctly.
-    # =====================================================
+        # =====================================================
+        # FIT JERSEY TEAM MODEL
+        # =====================================================
 
-    jersey_classifier.end_frame(
-        frame_number,
-        visible_ids
-    )
+        if frame_number % 10 == 0:
+            jersey_classifier.try_fit_team_model()
 
 
-    # =====================================================
-    # DRAW BALL
-    # =====================================================
+        # =====================================================
+        # DISPLAY
+        # =====================================================
 
-    if ball_box is not None:
-
-        x1, y1, x2, y2 = ball_box
-
-        ball_x = float(
-            (x1 + x2) / 2
-        )
-
-        ball_y = float(
-            (y1 + y2) / 2
-        )
-
-        tracking_csv_writer.writerow(
-            [
-                frame_number,
-                BALL_CLASS,
-                "ball",
-                "",
-                "",
-                ball_x,
-                ball_y,
-                x1,
-                y1,
-                x2,
-                y2
-            ]
-        )
-
-        draw_ball(
-            frame,
-            ball_box
+        cv2.imshow(
+            "Stable Tracking + KMeans Jersey Teams",
+            frame
         )
 
 
-    # =====================================================
-    # FIT JERSEY TEAM MODEL
-    # =====================================================
+        if (
+            cv2.waitKey(1)
+            &
+            0xFF
+            ==
+            ord("q")
+        ):
 
-    if frame_number % 10 == 0:
-        jersey_classifier.try_fit_team_model()
-
-
-    # =====================================================
-    # DISPLAY
-    # =====================================================
-
-    cv2.imshow(
-        "Stable Tracking + KMeans Jersey Teams",
-        frame
-    )
+            break
 
 
-    if (
-        cv2.waitKey(1)
-        &
-        0xFF
-        ==
-        ord("q")
-    ):
+    cap.release()
 
-        break
+    tracking_csv.close()
 
-
-cap.release()
-
-tracking_csv.close()
-
-cv2.destroyAllWindows()
+    cv2.destroyAllWindows()

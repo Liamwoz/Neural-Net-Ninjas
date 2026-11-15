@@ -3,7 +3,7 @@
   const video = $('video'), canvas = $('overlay'), ctx = canvas.getContext('2d');
   const markerLayer = $('markers'), seek = $('seek');
   let data = null, sample = true, sampleTime = 0, playing = false, lastTick = 0, videoUrl = null, videoFile = null, analysisToken = 0;
-  const colors = { team_a: '#d7ef92', team_b: '#f2a68d', ball: '#ffffff', other: '#eacb6d' };
+  const colors = { team_a: '#ed6a62', team_b: '#8ee393', referee: '#252525', unknown: '#d5d5d5', ball: '#ffffff', other: '#eacb6d' };
   const initial = [[12,34],[25,18],[27,49],[38,31],[46,53],[54,18],[63,36],[74,50],[82,22],[93,34]];
   const sampleObjects = t => initial.map((p, i) => ({ id: String(i + 1), type: 'player', team: i < 5 ? 'team_a' : 'team_b', x: Math.max(2, Math.min(98, p[0] + Math.sin(t / 3 + i) * 3)), y: Math.max(2, Math.min(98, p[1] / 68 * 100 + Math.cos(t / 4 + i) * 4)) })).concat([{type:'ball', x:50 + Math.sin(t / 3) * 16, y:50 + Math.cos(t / 3) * 17}]);
   const format = n => { n = Math.max(0, Math.floor(Number.isFinite(n) ? n : 0)); return `${String(Math.floor(n / 60)).padStart(2,'0')}:${String(n % 60).padStart(2,'0')}`; };
@@ -31,14 +31,14 @@
     $('playerCount').textContent = objects.filter(o => o.type === 'player').length;
     $('ballStatus').textContent = objects.some(o => o.type === 'ball') ? 'Visible' : 'Not visible';
     $('currentTime').textContent = format(t); $('duration').textContent = format(duration()); seek.max = duration(); seek.value = Math.min(t, duration());
-    $('frameStatus').textContent = sample ? 'Illustrative positions' : data ? `Frame at ${format(frame.time ?? 0)} · ${data.frames.length} frames loaded` : 'Analyze video or load projected JSON';
+    $('frameStatus').textContent = sample ? 'Illustrative positions' : data ? `Frame at ${format(frame.time ?? 0)} · ${frame.projection_status === 'none' ? 'Pitch projection unavailable' : `${data.frames.length} frames loaded`}` : 'Analyze video or load projected JSON';
     drawBoxes(objects);
   }
   function drawBoxes(objects) {
     const rect = canvas.getBoundingClientRect(); canvas.width = Math.round(rect.width * devicePixelRatio); canvas.height = Math.round(rect.height * devicePixelRatio); ctx.clearRect(0,0,canvas.width,canvas.height);
     if (!videoUrl || !video.videoWidth) return;
     const scale = Math.min(canvas.width / video.videoWidth, canvas.height / video.videoHeight), w = video.videoWidth * scale, h = video.videoHeight * scale, ox = (canvas.width - w) / 2, oy = (canvas.height - h) / 2;
-    objects.forEach(o => { if (!Array.isArray(o.bbox) || o.bbox.length !== 4 || !o.bbox.every(Number.isFinite)) return; const [x,y,bw,bh] = o.bbox; ctx.strokeStyle = colors[o.type === 'ball' ? 'ball' : o.team] || colors.other; ctx.lineWidth = 2 * devicePixelRatio; ctx.strokeRect(ox+x*w,oy+y*h,bw*w,bh*h); if (o.label) { ctx.font = `${12 * devicePixelRatio}px sans-serif`; ctx.fillStyle = ctx.strokeStyle; ctx.fillText(`${o.label} ${Math.round((o.confidence || 0)*100)}%`, ox+x*w, Math.max(12 * devicePixelRatio, oy+y*h-4*devicePixelRatio)); } });
+    objects.forEach(o => { if (!Array.isArray(o.bbox) || o.bbox.length !== 4 || !o.bbox.every(Number.isFinite)) return; const [x,y,bw,bh] = o.bbox; ctx.strokeStyle = colors[o.type === 'ball' ? 'ball' : o.team] || colors.other; ctx.lineWidth = 2 * devicePixelRatio; ctx.strokeRect(ox+x*w,oy+y*h,bw*w,bh*h); const text = o.type === 'player' ? `${o.team_label || (o.team === 'team_a' ? 'Team A' : o.team === 'team_b' ? 'Team B' : 'Unknown team')}${o.id != null ? ` #${o.id}` : ''}` : o.type === 'ball' ? 'Ball' : (o.label || ''); if (text) { ctx.font = `bold ${12 * devicePixelRatio}px sans-serif`; ctx.lineWidth = 3 * devicePixelRatio; ctx.strokeStyle = '#1b2420'; ctx.strokeText(text, ox+x*w, Math.max(12 * devicePixelRatio, oy+y*h-4*devicePixelRatio)); ctx.fillStyle = colors[o.type === 'ball' ? 'ball' : o.team] || colors.other; ctx.fillText(text, ox+x*w, Math.max(12 * devicePixelRatio, oy+y*h-4*devicePixelRatio)); } });
   }
   function validate(raw) {
     if (!raw || !Array.isArray(raw.frames) || !raw.frames.length) throw Error('The file needs a non-empty frames array.');
@@ -54,7 +54,7 @@
     if (!videoFile) return;
     const token = ++analysisToken, file = videoFile;
     $('analyzeBtn').disabled = true; $('analyzeBtn').textContent = 'Analyzing…';
-    setNotice('Analyzing your video locally. Your detections will appear on the footage when it is ready.');
+    setNotice('Analyzing the pitch and detections locally. Results will appear when processing is complete.');
     $('analysisProgress').hidden = false; $('progressTitle').textContent = 'Preparing analysis…';
     $('progressPercent').textContent = ''; $('progressFill').style.width = '0%';
     $('progressDetail').textContent = 'Uploading video to the local server';
@@ -77,10 +77,20 @@
           if (message.event === 'progress') {
             if (message.stage === 'waiting') { $('progressTitle').textContent = 'Waiting for the model…'; $('progressDetail').textContent = 'Another analysis may still be finishing.'; }
             if (message.stage === 'loading') { $('progressTitle').textContent = 'Loading the model…'; $('progressDetail').textContent = 'This may take a moment on the first run.'; }
+            if (message.stage === 'projection') { $('progressTitle').textContent = 'Calculating pitch projection…'; $('progressPercent').textContent = ''; $('progressDetail').textContent = 'Smoothing the pitch landmarks and camera movement.'; }
+            if (message.stage === 'keypoints') {
+              const {processed, total, elapsed} = message;
+              const percent = total ? Math.min(100, Math.round(processed / total * 100)) : null;
+              const remaining = total && processed >= 3 ? Math.max(0, (total - processed) * elapsed / processed) : null;
+              $('progressTitle').textContent = 'Finding pitch landmarks (1 of 2)';
+              $('progressPercent').textContent = percent === null ? '' : `${percent}%`;
+              $('progressFill').style.width = `${percent || 0}%`;
+              $('progressDetail').textContent = `${processed}${total ? ` / ${total}` : ''} frames · ${remaining === null ? 'Estimating time remaining…' : `About ${format(remaining)} remaining for this stage`}`;
+            }
             if (message.stage === 'processing') {
               const {processed, total, elapsed} = message;
               const percent = total ? Math.min(99, Math.round(processed / total * 100)) : null;
-              $('progressTitle').textContent = 'Analyzing video';
+              $('progressTitle').textContent = 'Detecting players and ball (2 of 2)';
               $('progressPercent').textContent = percent === null ? '' : `${percent}%`;
               $('progressFill').style.width = `${percent || 0}%`;
               const remaining = total && processed >= 3 ? Math.max(0, (total - processed) * elapsed / processed) : null;
@@ -94,8 +104,9 @@
       if (token !== analysisToken) return;
       hideProgress(); data = result; sample = false; sampleTime = 0; video.currentTime = 0;
       $('sessionName').textContent = file.name; $('sessionDetail').textContent = `${result.frames.length} analyzed frames · video loaded`;
-      $('dataStatus').textContent = 'YOLO detections';
-      setNotice('Analysis complete. Boxes show detections; the tactical map awaits homography.'); draw();
+      $('dataStatus').textContent = 'YOLO + pitch projection';
+      const missing = result.frames.length - result.projected_frames;
+      setNotice(missing ? `Analysis complete. Pitch projection was unavailable for ${missing} of ${result.frames.length} frames; boxes remain visible.` : 'Analysis complete. Boxes and pitch positions follow the video.'); draw();
     } catch (err) { if (token === analysisToken) { hideProgress(); setNotice(`Analysis failed: ${err.message}. Start the dashboard using frontend/server.py.`, true); } }
     finally { if (token === analysisToken) { $('analyzeBtn').disabled = false; $('analyzeBtn').textContent = '✳  Analyze video'; } }
   });

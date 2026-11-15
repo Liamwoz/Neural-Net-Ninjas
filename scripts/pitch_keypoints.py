@@ -63,7 +63,8 @@ def has_non_degenerate_quad(pitch_points: np.ndarray, min_area: float = 1.0) -> 
         return False
 
     def tri_area(a: np.ndarray, b: np.ndarray, c: np.ndarray) -> float:
-        return abs(float(np.cross(b - a, c - a))) / 2.0
+        ab, ac = b - a, c - a
+        return abs(float(ab[0] * ac[1] - ab[1] * ac[0])) / 2.0
 
     for quad in combinations(pitch_points, 4):
         if all(tri_area(*tri) > min_area for tri in combinations(quad, 3)):
