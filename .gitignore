@@ -124,6 +124,9 @@ StyleCopReport.xml
 
 # YOLO experiment outputs and downloaded model weights
 runs/
+# Local Python environments and Roboflow dataset exports
+.venv-directml/
+/data/Football Players and Ball.v*i.yolo26/
 !model/weights.pt
 *.vspscc
 *.vssscc
